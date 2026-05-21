@@ -70,6 +70,19 @@
       font-size: 12px;
       color: #1d4ed8;
     }
+    .stage-card { border: 1px solid #e5e7eb; border-radius: 10px; padding: 12px; background: #fcfcfd; }
+    .row { display: flex; gap: 8px; flex-wrap: wrap; }
+    .btn-alt { background: #334155; }
+    .btn-alt:hover { background: #1e293b; }
+    .btn-good { background: #0ea5e9; }
+    .btn-hard { background: #f59e0b; }
+    .btn-bad { background: #ef4444; }
+    .quiz-option { display: block; width: 100%; margin-top: 8px; text-align: left; background: #f8fafc; color: #111827; border: 1px solid #cbd5e1; }
+    .quiz-option:hover { background: #e2e8f0; }
+    .quiz-option.correct { border-color: #16a34a; background: #ecfdf5; }
+    .quiz-option.wrong { border-color: #dc2626; background: #fef2f2; }
+    .hidden { display: none; }
+    .scoreline { font-size: 14px; color: #0f172a; margin-bottom: 8px; }
     @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
   </style>
 </head>
@@ -146,30 +159,41 @@
 
       <div class="grid">
         <div>
-          <h3>Quiz ({{ quiz_questions|length }})</h3>
-          {% for q in quiz_questions %}
-            <div class="item">
-              <div><b>{{ loop.index }}.</b> {{ q.question }}</div>
-              <div class="muted">Tipo: {{ q.type }} | Dificultad: {{ q.difficulty }}</div>
-              {% if q.options %}
-                <ul>
-                  {% for op in q.options %}<li>{{ op }}</li>{% endfor %}
-                </ul>
-              {% endif %}
-              <div><b>Respuesta:</b> {{ q.answer }}</div>
+          <h3>Quiz interactivo ({{ quiz_questions|length }})</h3>
+          <div class="stage-card">
+            <div class="scoreline" id="quiz-score">Aciertos: 0 | Intentos: 0</div>
+            <div id="quiz-empty" class="muted">No hay preguntas cargadas.</div>
+            <div id="quiz-box" class="hidden">
+              <div class="muted" id="quiz-meta"></div>
+              <div style="margin-top:8px;"><b id="quiz-question"></b></div>
+              <div id="quiz-options" style="margin-top:8px;"></div>
+              <div id="quiz-feedback" class="item hidden" style="margin-top:10px;"></div>
+              <div class="row" style="margin-top:10px;">
+                <button type="button" id="quiz-next" class="btn-alt">Siguiente pregunta</button>
+              </div>
             </div>
-          {% endfor %}
+          </div>
         </div>
 
         <div>
-          <h3>Flashcards ({{ flashcards|length }})</h3>
-          {% for c in flashcards %}
-            <div class="item">
-              <div><b>{{ loop.index }}. Frente:</b> {{ c.front }}</div>
-              <div><b>Reverso:</b> {{ c.back }}</div>
-              {% if c.tags %}<div class="muted">Tags: {{ c.tags|join(', ') }}</div>{% endif %}
+          <h3>Flashcards interactivas ({{ flashcards|length }})</h3>
+          <div class="stage-card">
+            <div class="scoreline" id="flash-score">Tarjetas vistas: 0</div>
+            <div id="flash-empty" class="muted">No hay flashcards cargadas.</div>
+            <div id="flash-box" class="hidden">
+              <div class="muted" id="flash-meta"></div>
+              <div style="margin-top:8px;"><b id="flash-front"></b></div>
+              <div id="flash-back-box" class="item hidden" style="margin-top:10px;"></div>
+              <div class="row" style="margin-top:10px;">
+                <button type="button" id="flash-show" class="btn-alt">Mostrar reverso</button>
+              </div>
+              <div class="row hidden" id="flash-grade-row" style="margin-top:10px;">
+                <button type="button" id="grade-bad" class="btn-bad">No pude (-1)</button>
+                <button type="button" id="grade-hard" class="btn-hard">Pude con dificultad (+0)</button>
+                <button type="button" id="grade-good" class="btn-good">Muy facil (+1)</button>
+              </div>
             </div>
-          {% endfor %}
+          </div>
         </div>
       </div>
     </section>
@@ -229,6 +253,192 @@
           progressTimer = null;
         }
       });
+    })();
+
+    (function () {
+      const quizData = {{ quiz_questions | tojson }};
+      const flashData = {{ flashcards | tojson }};
+      const title = {{ title | tojson }};
+
+      function makeKey(prefix, a, b) {
+        return prefix + ':' + (a || 'untitled') + ':' + b;
+      }
+
+      function randomIndex(items) {
+        if (!items.length) return -1;
+        return Math.floor(Math.random() * items.length);
+      }
+
+      // ---------------- Quiz ----------------
+      const quizEmpty = document.getElementById('quiz-empty');
+      const quizBox = document.getElementById('quiz-box');
+      const quizMeta = document.getElementById('quiz-meta');
+      const quizQuestion = document.getElementById('quiz-question');
+      const quizOptions = document.getElementById('quiz-options');
+      const quizFeedback = document.getElementById('quiz-feedback');
+      const quizNext = document.getElementById('quiz-next');
+      const quizScore = document.getElementById('quiz-score');
+
+      let qAttempts = 0;
+      let qHits = 0;
+      let currentQ = null;
+
+      function normalizeOpt(s) {
+        return String(s || '').replace(/^\s*[A-D][\).:-]?\s*/i, '').trim().toLowerCase();
+      }
+
+      function drawQuiz() {
+        if (!quizData.length) return;
+        currentQ = quizData[randomIndex(quizData)];
+        quizMeta.textContent = 'Tipo: ' + (currentQ.type || 'multiple_choice') + ' | Dificultad: ' + (currentQ.difficulty || 'medium');
+        quizQuestion.textContent = currentQ.question || '';
+        quizOptions.innerHTML = '';
+        quizFeedback.classList.add('hidden');
+        quizFeedback.innerHTML = '';
+
+        const options = Array.isArray(currentQ.options) ? currentQ.options : [];
+        if (!options.length) {
+          const info = document.createElement('div');
+          info.className = 'muted';
+          info.textContent = 'Pregunta sin opciones. Respuesta esperada: ' + (currentQ.answer || '');
+          quizOptions.appendChild(info);
+          return;
+        }
+
+        const expected = normalizeOpt(currentQ.answer || '');
+        options.forEach(function (opt) {
+          const b = document.createElement('button');
+          b.type = 'button';
+          b.className = 'quiz-option';
+          b.textContent = opt;
+          b.addEventListener('click', function () {
+            qAttempts += 1;
+            const ok = normalizeOpt(opt) === expected || String(opt).trim().toLowerCase() === String(currentQ.answer || '').trim().toLowerCase();
+            if (ok) {
+              qHits += 1;
+              b.classList.add('correct');
+            } else {
+              b.classList.add('wrong');
+            }
+
+            Array.from(quizOptions.querySelectorAll('button')).forEach(function (node) {
+              node.disabled = true;
+              if (normalizeOpt(node.textContent || '') === expected) {
+                node.classList.add('correct');
+              }
+            });
+
+            quizScore.textContent = 'Aciertos: ' + qHits + ' | Intentos: ' + qAttempts;
+            quizFeedback.classList.remove('hidden');
+            quizFeedback.innerHTML = '<b>Respuesta:</b> ' + (currentQ.answer || '') + '<br><b>Explicacion:</b> ' + (currentQ.explanation || 'Sin explicacion.');
+          });
+          quizOptions.appendChild(b);
+        });
+      }
+
+      if (quizData.length && quizEmpty && quizBox) {
+        quizEmpty.classList.add('hidden');
+        quizBox.classList.remove('hidden');
+        drawQuiz();
+        if (quizNext) {
+          quizNext.addEventListener('click', drawQuiz);
+        }
+      }
+
+      // ---------------- Flashcards ----------------
+      const flashEmpty = document.getElementById('flash-empty');
+      const flashBox = document.getElementById('flash-box');
+      const flashMeta = document.getElementById('flash-meta');
+      const flashFront = document.getElementById('flash-front');
+      const flashBackBox = document.getElementById('flash-back-box');
+      const flashShow = document.getElementById('flash-show');
+      const flashGradeRow = document.getElementById('flash-grade-row');
+      const flashScore = document.getElementById('flash-score');
+      const gradeBad = document.getElementById('grade-bad');
+      const gradeHard = document.getElementById('grade-hard');
+      const gradeGood = document.getElementById('grade-good');
+
+      let seen = 0;
+      let currentCard = null;
+      const cardScores = {};
+
+      function getCardId(card, index) {
+        return makeKey('card', title, index + ':' + (card.front || '').slice(0, 40));
+      }
+
+      function loadScores() {
+        flashData.forEach(function (card, idx) {
+          const key = getCardId(card, idx);
+          const raw = window.localStorage.getItem(key);
+          cardScores[idx] = raw ? parseInt(raw, 10) || 0 : 0;
+        });
+      }
+
+      function saveScore(idx) {
+        const key = getCardId(flashData[idx], idx);
+        window.localStorage.setItem(key, String(cardScores[idx] || 0));
+      }
+
+      function pickCardIndex() {
+        if (!flashData.length) return -1;
+        const weights = flashData.map(function (_card, idx) {
+          const score = cardScores[idx] || 0;
+          if (score <= -3) return 8;
+          if (score === -2) return 6;
+          if (score === -1) return 4;
+          if (score === 0) return 3;
+          if (score === 1) return 2;
+          if (score === 2) return 1.4;
+          return 1;
+        });
+        const sum = weights.reduce(function (a, b) { return a + b; }, 0);
+        let r = Math.random() * sum;
+        for (let i = 0; i < weights.length; i += 1) {
+          r -= weights[i];
+          if (r <= 0) return i;
+        }
+        return weights.length - 1;
+      }
+
+      function renderCard() {
+        const idx = pickCardIndex();
+        if (idx < 0) return;
+        currentCard = { idx: idx, data: flashData[idx] };
+        flashMeta.textContent = 'Puntaje actual: ' + (cardScores[idx] || 0) + ' | Tags: ' + ((currentCard.data.tags || []).join(', ') || '-');
+        flashFront.textContent = currentCard.data.front || '';
+        flashBackBox.classList.add('hidden');
+        flashBackBox.textContent = '';
+        flashGradeRow.classList.add('hidden');
+      }
+
+      function grade(delta) {
+        if (!currentCard) return;
+        const idx = currentCard.idx;
+        cardScores[idx] = (cardScores[idx] || 0) + delta;
+        saveScore(idx);
+        seen += 1;
+        flashScore.textContent = 'Tarjetas vistas: ' + seen;
+        renderCard();
+      }
+
+      if (flashData.length && flashEmpty && flashBox) {
+        loadScores();
+        flashEmpty.classList.add('hidden');
+        flashBox.classList.remove('hidden');
+        renderCard();
+
+        if (flashShow) {
+          flashShow.addEventListener('click', function () {
+            if (!currentCard) return;
+            flashBackBox.classList.remove('hidden');
+            flashBackBox.textContent = currentCard.data.back || '';
+            flashGradeRow.classList.remove('hidden');
+          });
+        }
+        if (gradeBad) gradeBad.addEventListener('click', function () { grade(-1); });
+        if (gradeHard) gradeHard.addEventListener('click', function () { grade(0); });
+        if (gradeGood) gradeGood.addEventListener('click', function () { grade(1); });
+      }
     })();
   </script>
 </body>

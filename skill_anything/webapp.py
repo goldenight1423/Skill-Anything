@@ -71,12 +71,13 @@ async def generate_from_pdf(
     pdf_file: UploadFile = File(...),
     title: str = Form(""),
 ) -> RedirectResponse:
-    if not pdf_file.filename.lower().endswith(".pdf"):
+    filename = pdf_file.filename or ""
+    if not filename.lower().endswith(".pdf"):
         _set_message(error="Solo se permiten archivos PDF.")
         return RedirectResponse(url="/", status_code=303)
 
     ts = datetime.now().strftime("%Y%m%d-%H%M%S")
-    safe_name = Path(pdf_file.filename).name
+    safe_name = Path(filename).name
     saved_pdf = UPLOAD_DIR / f"{ts}-{safe_name}"
 
     content = await pdf_file.read()
@@ -85,6 +86,18 @@ async def generate_from_pdf(
     try:
         engine = Engine()
         pack = engine.from_pdf(str(saved_pdf), title=title.strip() or None)
+        pack.quiz_questions = engine.quiz_gen.generate(
+            pack.chunks,
+            count_per_chunk=6,
+            max_questions=120,
+        )
+        pack.flashcards = engine.flashcard_gen.generate(
+            pack.chunks,
+            count_per_chunk=8,
+            max_cards=240,
+        )
+        pack.metadata["total_questions"] = len(pack.quiz_questions)
+        pack.metadata["total_flashcards"] = len(pack.flashcards)
         engine.write(pack, OUTPUT_DIR, format="study")
 
         slug = pack.title.lower()
@@ -104,12 +117,13 @@ async def generate_from_pdf(
 
 @app.post("/load-pack")
 async def load_pack(yaml_file: UploadFile = File(...)) -> RedirectResponse:
-    if not yaml_file.filename.lower().endswith((".yaml", ".yml")):
+    filename = yaml_file.filename or ""
+    if not filename.lower().endswith((".yaml", ".yml")):
         _set_message(error="Sube un archivo .yaml o .yml")
         return RedirectResponse(url="/", status_code=303)
 
     ts = datetime.now().strftime("%Y%m%d-%H%M%S")
-    saved_yaml = UPLOAD_DIR / f"{ts}-{Path(yaml_file.filename).name}"
+    saved_yaml = UPLOAD_DIR / f"{ts}-{Path(filename).name}"
     saved_yaml.write_bytes(await yaml_file.read())
 
     try:
