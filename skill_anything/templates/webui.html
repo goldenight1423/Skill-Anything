@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Skill-Anything Web UI</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 0; background: #f4f6f8; color: #111827; }
+    .wrap { max-width: 1100px; margin: 24px auto; padding: 0 16px; }
+    .card { background: #fff; border: 1px solid #d1d5db; border-radius: 10px; padding: 16px; margin-bottom: 16px; }
+    h1, h2 { margin-top: 0; }
+    label { display: block; margin-top: 10px; font-weight: 600; }
+    input[type="text"], input[type="password"], input[type="file"] {
+      width: 100%; padding: 10px; border: 1px solid #9ca3af; border-radius: 8px; margin-top: 6px;
+    }
+    button { margin-top: 12px; background: #0ea5e9; color: #fff; border: 0; padding: 10px 14px; border-radius: 8px; cursor: pointer; }
+    button:hover { background: #0284c7; }
+    .ok { background: #ecfdf5; border: 1px solid #10b981; color: #065f46; padding: 10px; border-radius: 8px; }
+    .err { background: #fef2f2; border: 1px solid #ef4444; color: #991b1b; padding: 10px; border-radius: 8px; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    .pill { display: inline-block; background: #e5e7eb; border-radius: 999px; padding: 4px 10px; font-size: 12px; }
+    .item { border: 1px solid #e5e7eb; border-radius: 8px; padding: 10px; margin-bottom: 10px; background: #fafafa; }
+    .muted { color: #6b7280; font-size: 13px; }
+    @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Skill-Anything: panel web</h1>
+    <p class="muted">Configura API key, sube PDF y revisa quiz + flashcards desde el navegador.</p>
+
+    {% if message %}<div class="ok">{{ message }}</div>{% endif %}
+    {% if error %}<div class="err">{{ error }}</div>{% endif %}
+
+    <div class="grid">
+      <section class="card">
+        <h2>1) Configuracion API</h2>
+        <p class="muted">Estado API key: <span class="pill">{{ 'Configurada' if api_key_configured else 'No configurada' }}</span></p>
+        <form method="post" action="/config">
+          <label>API Key</label>
+          <input type="password" name="api_key" placeholder="sk-...">
+
+          <label>API Base (opcional)</label>
+          <input type="text" name="api_base" value="{{ api_base }}" placeholder="https://api.openai.com/v1">
+
+          <label>Modelo</label>
+          <input type="text" name="model" value="{{ model }}" placeholder="gpt-4o">
+
+          <button type="submit">Guardar configuracion</button>
+        </form>
+      </section>
+
+      <section class="card">
+        <h2>2) Subir PDF y generar pack</h2>
+        <form method="post" action="/generate" enctype="multipart/form-data">
+          <label>PDF</label>
+          <input type="file" name="pdf_file" accept=".pdf" required>
+
+          <label>Titulo (opcional)</label>
+          <input type="text" name="title" placeholder="Mi curso de ...">
+
+          <button type="submit">Generar quiz y flashcards</button>
+        </form>
+      </section>
+    </div>
+
+    <section class="card">
+      <h2>3) Cargar pack YAML existente (opcional)</h2>
+      <p class="muted">Si ya tienes un `.yaml`, puedes cargarlo para ver quiz y flashcards sin regenerar PDF.</p>
+      <form method="post" action="/load-pack" enctype="multipart/form-data">
+        <input type="file" name="yaml_file" accept=".yaml,.yml" required>
+        <button type="submit">Cargar pack</button>
+      </form>
+    </section>
+
+    <section class="card">
+      <h2>Resultado actual</h2>
+      {% if title %}
+        <p><b>Titulo:</b> {{ title }}</p>
+      {% endif %}
+      {% if yaml_path %}
+        <p><b>YAML:</b> <code>{{ yaml_path }}</code></p>
+      {% endif %}
+
+      <div class="grid">
+        <div>
+          <h3>Quiz ({{ quiz_questions|length }})</h3>
+          {% for q in quiz_questions %}
+            <div class="item">
+              <div><b>{{ loop.index }}.</b> {{ q.question }}</div>
+              <div class="muted">Tipo: {{ q.type }} | Dificultad: {{ q.difficulty }}</div>
+              {% if q.options %}
+                <ul>
+                  {% for op in q.options %}<li>{{ op }}</li>{% endfor %}
+                </ul>
+              {% endif %}
+              <div><b>Respuesta:</b> {{ q.answer }}</div>
+            </div>
+          {% endfor %}
+        </div>
+
+        <div>
+          <h3>Flashcards ({{ flashcards|length }})</h3>
+          {% for c in flashcards %}
+            <div class="item">
+              <div><b>{{ loop.index }}. Frente:</b> {{ c.front }}</div>
+              <div><b>Reverso:</b> {{ c.back }}</div>
+              {% if c.tags %}<div class="muted">Tags: {{ c.tags|join(', ') }}</div>{% endif %}
+            </div>
+          {% endfor %}
+        </div>
+      </div>
+    </section>
+  </div>
+</body>
+</html>

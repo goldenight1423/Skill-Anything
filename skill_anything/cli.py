@@ -561,5 +561,22 @@ def version() -> None:
     rprint(f"[bold cyan]Skill-Anything[/bold cyan] v{__version__}")
 
 
+@app.command()
+def webui(
+    host: str = typer.Option("0.0.0.0", "--host", help="Host for web UI"),
+    port: int = typer.Option(8000, "--port", help="Port for web UI"),
+) -> None:
+    """Run a local web interface for API key, PDF upload, quiz, and flashcards."""
+    try:
+        import uvicorn
+    except ImportError as e:
+        _handle_error(e)
+        return
+
+    _show_banner()
+    console.print(f"[bold]Starting Web UI:[/bold] [cyan]http://{host}:{port}[/cyan]\n")
+    uvicorn.run("skill_anything.webapp:app", host=host, port=port, reload=False)
+
+
 if __name__ == "__main__":
     app()

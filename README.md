@@ -268,6 +268,23 @@ sa export output/my-skill.yaml --format skill
 sa auto textbook.pdf --format all
 ```
 
+### 7. Web UI (API key + PDF upload + quiz/flashcards)
+
+If you prefer a browser workflow:
+
+```bash
+sa webui --host 0.0.0.0 --port 8000
+```
+
+Then open `http://localhost:8000`.
+
+The Web UI lets you:
+
+- set API key / API base / model
+- upload a PDF and generate a study pack
+- view generated quiz questions and flashcards
+- load an existing `.yaml` pack and review quiz/flashcards
+
 ---
 
 ## Output Structure
