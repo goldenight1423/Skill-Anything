@@ -4,6 +4,7 @@ import os
 from datetime import datetime
 from pathlib import Path
 
+import yaml
 from fastapi import FastAPI, File, Form, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
@@ -28,6 +29,7 @@ STATE: dict[str, object] = {
     "quiz_questions": [],
     "flashcards": [],
 }
+IS_GENERATING = False
 
 
 def _set_message(message: str = "", error: str = "") -> None:
@@ -71,6 +73,12 @@ async def generate_from_pdf(
     pdf_file: UploadFile = File(...),
     title: str = Form(""),
 ) -> RedirectResponse:
+    global IS_GENERATING
+
+    if IS_GENERATING:
+        _set_message(error="Ya hay una generacion en curso. Espera a que termine.")
+        return RedirectResponse(url="/", status_code=303)
+
     filename = pdf_file.filename or ""
     if not filename.lower().endswith(".pdf"):
         _set_message(error="Solo se permiten archivos PDF.")
@@ -84,25 +92,33 @@ async def generate_from_pdf(
     saved_pdf.write_bytes(content)
 
     try:
+        IS_GENERATING = True
         engine = Engine()
         pack = engine.from_pdf(str(saved_pdf), title=title.strip() or None)
         pack.quiz_questions = engine.quiz_gen.generate(
             pack.chunks,
             count_per_chunk=6,
-            max_questions=120,
+            max_questions=80,
         )
         pack.flashcards = engine.flashcard_gen.generate(
             pack.chunks,
             count_per_chunk=8,
-            max_cards=240,
+            max_cards=160,
         )
         pack.metadata["total_questions"] = len(pack.quiz_questions)
         pack.metadata["total_flashcards"] = len(pack.flashcards)
-        engine.write(pack, OUTPUT_DIR, format="study")
 
         slug = pack.title.lower()
         slug = "-".join(part for part in "".join(ch if ch.isalnum() else " " for ch in slug).split())[:60]
         yaml_path = OUTPUT_DIR / f"{slug or 'skill-pack'}.yaml"
+        with open(yaml_path, "w", encoding="utf-8") as f:
+            yaml.dump(
+                pack.to_dict(),
+                f,
+                allow_unicode=True,
+                default_flow_style=False,
+                sort_keys=False,
+            )
 
         STATE["title"] = pack.title
         STATE["yaml_path"] = str(yaml_path)
@@ -111,6 +127,8 @@ async def generate_from_pdf(
         _set_message("PDF procesado correctamente. Ya puedes revisar quiz y flashcards.")
     except Exception as exc:
         _set_message(error=f"Error al procesar PDF: {exc}")
+    finally:
+        IS_GENERATING = False
 
     return RedirectResponse(url="/", status_code=303)
 
